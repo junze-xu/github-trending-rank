@@ -10,9 +10,14 @@ on:
     - cron: "10 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   scrape-developer:
     runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
     steps:
       - uses: actions/checkout@v4
       - name: Check if archive directory for today exists
