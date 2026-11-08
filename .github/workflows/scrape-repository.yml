@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: scrape-archive
+  cancel-in-progress: false
+
 jobs:
   scrape-repository:
     runs-on: ubuntu-latest
@@ -47,7 +51,17 @@ jobs:
           git config --local user.name "GitHub Action"
           git add archive
           git commit -m "chore: update repository archive $(date +'%Y-%m-%d')"
-          git push origin main
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase --quiet origin main; then
+              if git push --quiet origin main; then
+                echo "pushed on attempt $attempt"
+                exit 0
+              fi
+            fi
+            echo "attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "failed to push after 5 attempts" && exit 1
       - uses: actions/upload-artifact@v4
         if: env.should_scrape_today == 'true'
         with:
