@@ -18,6 +18,9 @@ npm-debug.log*
 # Scraper debug screenshots
 debug/
 
+# Build output（站点 + JSON API，由 CI 生成并部署到 Pages）
+dist/
+
 # Temp
 *.tmp
 *.bak
