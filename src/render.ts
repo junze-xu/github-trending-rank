@@ -79,41 +79,50 @@ function renderTags(tags: string[]): string {
   return `<span class="tags">${escaped}</span>`
 }
 
-function renderMetaLine(entry: RankingEntry, showStreak: boolean): string {
+function renderMetaLine(entry: RankingEntry, showStreak: boolean, showFirstSeen = false): string {
   const parts: string[] = []
   if (entry.language) parts.push(renderLanguage(entry.language, entry.languageColor))
   parts.push(`<span title="Star 总量">${fmt.format(entry.stars)} ★</span>`)
   if (entry.forks > 0) parts.push(`<span title="Fork 总量">${fmt.format(entry.forks)} forks</span>`)
+  if (showFirstSeen) parts.push(`<span class="streak">首次上榜 ${escapeHtml(entry.firstSeen)}</span>`)
   if (showStreak && entry.consecutiveDays > 1) {
     parts.push(`<span class="streak">连续在榜 ${entry.consecutiveDays} 天</span>`)
   }
   return `<div class="meta-line">${parts.join('<span class="sep">·</span>')}</div>`
 }
 
-function renderRow(entry: RankingEntry, windowLabel: string): string {
-  const delta = entry.starsDelta
+function renderRow(
+  entry: RankingEntry,
+  windowLabel: string,
+  opts: { isNewcomer?: boolean; rankOverride?: number } = {},
+): string {
+  const isNew = opts.isNewcomer === true
+  const deltaValue = isNew ? entry.starsSinceFirstSeen : entry.starsDelta
+  const deltaLabel = isNew ? "自首次上榜" : `${windowLabel}新增`
   let deltaHtml: string
-  if (delta === null) {
+  if (deltaValue === null) {
     deltaHtml = `<div class="v">—</div><div class="l">首次上榜</div>`
   } else {
-    const sign = delta >= 0 ? "+" : "−"
-    const cls = delta >= 0 ? "" : " down"
-    deltaHtml = `<div class="v${cls}">${sign}${fmt.format(Math.abs(delta))}</div><div class="l">${windowLabel}新增</div>`
+    const sign = deltaValue >= 0 ? "+" : "−"
+    const cls = deltaValue >= 0 ? "" : " down"
+    deltaHtml = `<div class="v${cls}">${sign}${fmt.format(Math.abs(deltaValue))}</div><div class="l">${deltaLabel}</div>`
   }
 
   const desc = entry.description
     ? `<div class="desc">${escapeHtml(entry.description)}</div>`
     : ""
 
+  const rank = opts.rankOverride ?? entry.rank ?? "·"
+
   return `<div class="row">
-  <div class="rank">${entry.rank ?? "·"}</div>
+  <div class="rank">${rank}</div>
   <div class="main">
     <div class="repo-line">
       <a class="repo" href="${REPO_URL}${escapeHtml(entry.fullName)}" target="_blank" rel="noopener">${escapeHtml(entry.fullName)}</a>
       ${renderTags(entry.tags)}
     </div>
     ${desc}
-    ${renderMetaLine(entry, true)}
+    ${renderMetaLine(entry, !isNew, isNew)}
   </div>
   <div class="delta">${deltaHtml}</div>
 </div>`
@@ -121,28 +130,14 @@ function renderRow(entry: RankingEntry, windowLabel: string): string {
 
 function renderNewcomers(entries: RankingEntry[]): string {
   if (entries.length === 0) return ""
-  const items = entries
-    .map((entry) => {
-      const desc = entry.description
-        ? `<div class="desc">${escapeHtml(entry.description)}</div>`
-        : ""
-      const growth =
-        typeof entry.starsSinceFirstSeen === "number" && entry.starsSinceFirstSeen > 0
-          ? `<div class="d-new">+${fmt.format(entry.starsSinceFirstSeen)} 自首次上榜以来</div>`
-          : ""
-      return `<div class="newcomer">
-  <a class="repo" href="${REPO_URL}${escapeHtml(entry.fullName)}" target="_blank" rel="noopener">${escapeHtml(entry.fullName)}</a>
-  ${desc}
-  <div class="m">首次上榜 ${escapeHtml(entry.firstSeen)} · ${fmt.format(entry.stars)} ★</div>
-  ${growth}
-</div>`
-    })
+  const rows = entries
+    .map((entry, i) => renderRow(entry, "", { isNewcomer: true, rankOverride: i + 1 }))
     .join("\n")
   return `<div class="list-head">
   <h2>新上榜（${entries.length}）</h2>
-  <span class="meta">本窗口内首次出现 · 按可观测新增排序（不进新增榜）</span>
+  <span class="meta">本窗口内首次出现 · 按「自首次上榜以来新增」排序（不进新增榜）</span>
 </div>
-<div class="newcomers">${items}</div>`
+<div class="list">${rows}</div>`
 }
 
 function renderList(items: RankingEntry[], windowLabel: string): string {
@@ -659,7 +654,6 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .view-tab.active{color:var(--text);background:var(--panel);border-color:var(--accent);font-weight:600}
 .explain{color:var(--dim);font-size:12.5px;line-height:1.7;margin:12px 0 2px}
 .dev-name{color:var(--dim);font-size:12px}
-.newcomer .d-new{color:var(--up);font-size:11px;margin-top:3px}
 .translate-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;display:none;min-width:132px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:10}
 .translate-menu.open{display:block}
 .translate-menu a{display:block;padding:6px 10px;border-radius:6px;color:var(--text);font-size:12.5px}
@@ -694,11 +688,6 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .delta .v{font-size:17px;font-weight:700;color:var(--up);font-variant-numeric:tabular-nums}
 .delta .v.down{color:var(--down)}
 .delta .l{font-size:11px;color:var(--dim);margin-top:3px}
-.newcomers{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-top:4px}
-.newcomer{border:1px solid var(--border-soft);border-radius:8px;padding:10px 12px;background:rgba(13,17,23,.55)}
-.newcomer .repo{font-size:13px}
-.newcomer .desc{font-size:12px}
-.newcomer .m{color:var(--dim);font-size:11px;margin-top:3px}
 .panel{border:1px solid var(--border-soft);border-radius:12px;background:var(--panel);padding:22px}
 .panel.empty{color:var(--dim);font-size:13px;text-align:center}
 .note{color:var(--dim);font-size:12px;margin-top:16px;line-height:1.8}
