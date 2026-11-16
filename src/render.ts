@@ -92,12 +92,16 @@ function renderRow(entry: RankingEntry, windowLabel: string): string {
 function renderNewcomers(entries: RankingEntry[]): string {
   if (entries.length === 0) return ""
   const items = entries
-    .map(
-      (entry) => `<div class="newcomer">
+    .map((entry) => {
+      const desc = entry.description
+        ? `<div class="desc">${escapeHtml(entry.description)}</div>`
+        : ""
+      return `<div class="newcomer">
   <a class="repo" href="${REPO_URL}${escapeHtml(entry.fullName)}" target="_blank" rel="noopener">${escapeHtml(entry.fullName)}</a>
+  ${desc}
   <div class="m">首次上榜 ${escapeHtml(entry.firstSeen)} · ${fmt.format(entry.stars)} ★</div>
-</div>`,
-    )
+</div>`
+    })
     .join("\n")
   return `<div class="list-head">
   <h2>新上榜（${entries.length}）</h2>
@@ -188,6 +192,7 @@ ${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12))
           <a data-tl="zh-TW" href="#">繁體中文</a>
           <a data-tl="ja" href="#">日本語</a>
           <a data-tl="ko" href="#">한국어</a>
+          <a data-tl="" href="#">↩ 显示原文</a>
         </div>
       </div>
     </div>
@@ -209,21 +214,169 @@ ${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12))
     <div>仓库：<a href="${SITE_REPO}" target="_blank" rel="noopener">junze-xu/github-trending-rank</a></div>
   </footer>
 </div>
+<div id="translateToast" role="status"></div>
 <script>
 (function () {
   var btn = document.getElementById("translateBtn")
   var menu = document.getElementById("translateMenu")
+  var toast = document.getElementById("translateToast")
   if (!btn || !menu) return
-  // 浏览器内置翻译没有对网页开放的接口，这里调用 Google 翻译的公开整页翻译接口
-  var pageUrl = location.protocol === "file:"
-    ? "https://junze-xu.github.io/github-trending-rank/"
-    : location.href
+  // 浏览器内置翻译没有对网页开放的 JS 接口：优先原地调用 MyMemory 公开翻译 API，
+  // 失败（额度/网络）时在 toast 中降级引导到 Google 整页翻译。
+  var CACHE_KEY = "gtr-translate-cache-v1"
+  var cache = {}
+  try { cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}") } catch (e) { cache = {} }
+  var originals = []
+  var translatedLang = null
+  var busy = false
+  var LABELS = { en: "English", "zh-CN": "简体中文", "zh-TW": "繁體中文", ja: "日本語", ko: "한국어" }
+  var PAIRS = { en: "en-US", "zh-CN": "zh-CN", "zh-TW": "zh-TW", ja: "ja-JP", ko: "ko-KR" }
+
+  function hasCJK(s) { return /[\u3400-\u9fff]/.test(s) }
+  function pageUrl() {
+    return location.protocol === "file:"
+      ? "https://junze-xu.github.io/github-trending-rank/"
+      : location.href
+  }
+  function showToast(html) {
+    if (!toast) return
+    toast.innerHTML = html
+    toast.className = "show"
+  }
+  function hideToast() {
+    if (toast) toast.className = ""
+  }
+  function restorePage() {
+    originals.forEach(function (o) { o.node.nodeValue = o.text })
+    originals = []
+    translatedLang = null
+    btn.textContent = "🌐 翻译"
+  }
+
+  function collectNodes() {
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var text = node.nodeValue
+        if (!text || !text.trim()) return NodeFilter.FILTER_REJECT
+        var p = node.parentElement
+        if (!p) return NodeFilter.FILTER_REJECT
+        var tag = p.tagName
+        if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT" || tag === "CODE" || tag === "PRE") return NodeFilter.FILTER_REJECT
+        if (p.closest("a") || p.closest(".translate") || p.closest("#translateToast")) return NodeFilter.FILTER_REJECT
+        return NodeFilter.FILTER_ACCEPT
+      }
+    })
+    var nodes = []
+    while (walker.nextNode()) nodes.push(walker.currentNode)
+    return nodes
+  }
+
+  function needsTranslate(text, tl) {
+    return tl === "en" ? hasCJK(text) : !hasCJK(text)
+  }
+
+  function translateChunk(texts, src, dst) {
+    var joined = texts.join("\\n")
+    var key = dst + "|" + joined
+    if (cache[key]) return Promise.resolve(cache[key].split("\\n"))
+    var url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(joined) + "&langpair=" + encodeURIComponent(src + "|" + dst)
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("http " + r.status)
+      return r.json()
+    }).then(function (j) {
+      var text = j && j.responseData && j.responseData.translatedText
+      if (!text || String(j.responseStatus) !== "200") throw new Error("bad response")
+      cache[key] = text
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)) } catch (e) {}
+      return text.split("\\n")
+    })
+  }
+
+  function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms) }) }
+
+  function translatePage(tl) {
+    if (translatedLang) restorePage()
+    var dst = PAIRS[tl] || tl
+    var jobs = []
+    collectNodes().forEach(function (node) {
+      var text = node.nodeValue
+      if (!needsTranslate(text, tl)) return
+      jobs.push(node)
+    })
+    jobs.forEach(function (node) { originals.push({ node: node, text: node.nodeValue }) })
+    if (jobs.length === 0) return Promise.resolve({ applied: 0 })
+
+    var groups = {}
+    jobs.forEach(function (node) {
+      var src = hasCJK(node.nodeValue) ? "zh-CN" : "en-US"
+      ;(groups[src] = groups[src] || []).push(node)
+    })
+    var chunks = []
+    Object.keys(groups).forEach(function (src) {
+      var chunk = []
+      var chunkLen = 0
+      groups[src].forEach(function (node) {
+        var text = node.nodeValue
+        if (chunkLen > 0 && chunkLen + text.length + 1 > 450) {
+          chunks.push({ src: src, nodes: chunk })
+          chunk = []
+          chunkLen = 0
+        }
+        chunk.push(node)
+        chunkLen += text.length + 1
+      })
+      if (chunk.length) chunks.push({ src: src, nodes: chunk })
+    })
+
+    var index = 0
+    function next() {
+      if (index >= chunks.length) return Promise.resolve()
+      var c = chunks[index++]
+      return translateChunk(c.nodes.map(function (n) { return n.nodeValue }), c.src, dst)
+        .then(function (lines) {
+          if (lines.length !== c.nodes.length) throw new Error("segment mismatch")
+          c.nodes.forEach(function (n, i) { n.nodeValue = lines[i] })
+          return sleep(120).then(next)
+        })
+    }
+    return next().then(function () { return { applied: jobs.length } })
+  }
+
+  function googleFallback(tl) {
+    return "https://translate.google.com/translate?sl=auto&tl=" + tl + "&u=" + encodeURIComponent(pageUrl())
+  }
+
   menu.querySelectorAll("a[data-tl]").forEach(function (a) {
-    var tl = a.getAttribute("data-tl")
-    a.href = "https://translate.google.com/translate?sl=auto&tl=" + tl + "&u=" + encodeURIComponent(pageUrl)
-    a.target = "_blank"
-    a.rel = "noopener"
+    a.addEventListener("click", function (e) {
+      e.preventDefault()
+      menu.classList.remove("open")
+      btn.setAttribute("aria-expanded", "false")
+      if (busy) return
+      var tl = a.getAttribute("data-tl")
+      if (!tl) {
+        restorePage()
+        hideToast()
+        return
+      }
+      busy = true
+      hideToast()
+      btn.disabled = true
+      btn.textContent = "翻译中…"
+      translatePage(tl).then(function (r) {
+        busy = false
+        btn.disabled = false
+        translatedLang = tl
+        btn.textContent = "✓ " + (LABELS[tl] || tl)
+        if (r.applied === 0) showToast("当前页面上没有需要翻译的内容")
+      }).catch(function () {
+        busy = false
+        btn.disabled = false
+        btn.textContent = "🌐 翻译"
+        showToast("免费翻译额度不足或网络受限，可在浏览器中换个时间重试。<br><a href=\\\"" + googleFallback(tl) + "\\\" target=\\\"_blank\\\" rel=\\\"noopener\\\">在 Google 翻译中打开 ↗</a>")
+      })
+    })
   })
+
   btn.addEventListener("click", function (e) {
     e.stopPropagation()
     var open = menu.classList.toggle("open")
@@ -274,6 +427,10 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .translate{position:relative;flex:none}
 .translate-btn{cursor:pointer;font-family:inherit;font-size:12px;color:var(--dim);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:4px 12px;transition:color .15s,border-color .15s}
 .translate-btn:hover{color:var(--text);border-color:var(--dim)}
+.translate-btn[disabled]{opacity:.65;cursor:default}
+#translateToast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);max-width:min(90vw,430px);background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.7;color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:99}
+#translateToast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
+#translateToast a{color:var(--accent);white-space:nowrap}
 .translate-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;display:none;min-width:132px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:10}
 .translate-menu.open{display:block}
 .translate-menu a{display:block;padding:6px 10px;border-radius:6px;color:var(--text);font-size:12.5px}
@@ -311,6 +468,7 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .newcomers{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-top:4px}
 .newcomer{border:1px solid var(--border-soft);border-radius:8px;padding:10px 12px;background:rgba(13,17,23,.55)}
 .newcomer .repo{font-size:13px}
+.newcomer .desc{font-size:12px}
 .newcomer .m{color:var(--dim);font-size:11px;margin-top:3px}
 .panel{border:1px solid var(--border-soft);border-radius:12px;background:var(--panel);padding:22px}
 .panel.empty{color:var(--dim);font-size:13px;text-align:center}
