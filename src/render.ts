@@ -1,7 +1,14 @@
 import fs from "fs/promises"
 import path from "path"
 
-import { TOP_N, type DerivedData, type RankingEntry, type WindowKey } from "./derive"
+import {
+  TOP_N,
+  type DerivedData,
+  type DeveloperEntry,
+  type RankingEntry,
+  type RankingWindow,
+  type WindowKey,
+} from "./derive"
 
 const WINDOW_LABEL: Record<WindowKey, string> = {
   "1d": "近 1 日",
@@ -96,16 +103,21 @@ function renderNewcomers(entries: RankingEntry[]): string {
       const desc = entry.description
         ? `<div class="desc">${escapeHtml(entry.description)}</div>`
         : ""
+      const growth =
+        typeof entry.starsSinceFirstSeen === "number" && entry.starsSinceFirstSeen > 0
+          ? `<div class="d-new">+${fmt.format(entry.starsSinceFirstSeen)} 自首次上榜以来</div>`
+          : ""
       return `<div class="newcomer">
   <a class="repo" href="${REPO_URL}${escapeHtml(entry.fullName)}" target="_blank" rel="noopener">${escapeHtml(entry.fullName)}</a>
   ${desc}
   <div class="m">首次上榜 ${escapeHtml(entry.firstSeen)} · ${fmt.format(entry.stars)} ★</div>
+  ${growth}
 </div>`
     })
     .join("\n")
   return `<div class="list-head">
   <h2>新上榜（${entries.length}）</h2>
-  <span class="meta">本窗口内首次进入榜单</span>
+  <span class="meta">本窗口内首次出现 · 按可观测新增排序（不进新增榜）</span>
 </div>
 <div class="newcomers">${items}</div>`
 }
@@ -115,12 +127,133 @@ function renderList(items: RankingEntry[], windowLabel: string): string {
   return `<div class="list">${rows}</div>`
 }
 
+function renderReturning(entries: RankingEntry[], windowLabel: string): string {
+  if (entries.length === 0) return ""
+  const items = entries
+    .slice(0, 10)
+    .map((entry) => {
+      const delta = entry.starsDelta
+      const deltaHtml =
+        delta === null
+          ? `<div class="v">—</div><div class="l">无基线差分</div>`
+          : `<div class="v${delta >= 0 ? "" : " down"}">${delta >= 0 ? "+" : "−"}${fmt.format(Math.abs(delta))}</div><div class="l">${windowLabel}新增</div>`
+      const desc = entry.description
+        ? `<div class="desc">${escapeHtml(entry.description)}</div>`
+        : ""
+      return `<div class="row">
+  <div class="rank">${entry.rank ?? "·"}</div>
+  <div class="main">
+    <div class="repo-line">
+      <a class="repo" href="${REPO_URL}${escapeHtml(entry.fullName)}" target="_blank" rel="noopener">${escapeHtml(entry.fullName)}</a>
+    </div>
+    ${desc}
+    <div class="meta-line"><span class="streak">中断 ${entry.lastGapDays ?? "?"} 天后回归 · 已连续在榜 ${entry.consecutiveDays} 天</span></div>
+  </div>
+  <div class="delta">${deltaHtml}</div>
+</div>`
+    })
+    .join("\n")
+  return `<div class="list-head">
+  <h2>回归（${entries.length}）</h2>
+  <span class="meta">中断 ≥7 天后重新在榜 · 按差分排序（— 表示无基线）</span>
+</div>
+<div class="list">${items}</div>`
+}
+
+function renderStreak(entries: RankingEntry[], available: boolean): string {
+  if (!available || entries.length === 0) return ""
+  const sorted = [...entries].sort(
+    (a, b) => b.consecutiveDays - a.consecutiveDays || (b.starsDelta ?? -1) - (a.starsDelta ?? -1),
+  )
+  const top = sorted.slice(0, 10)
+  const rows = top
+    .map(
+      (entry, i) => `<div class="row">
+  <div class="rank">${i + 1}</div>
+  <div class="main">
+    <div class="repo-line">
+      <a class="repo" href="${REPO_URL}${escapeHtml(entry.fullName)}" target="_blank" rel="noopener">${escapeHtml(entry.fullName)}</a>
+      ${renderTags(entry.tags)}
+    </div>
+    ${entry.description ? `<div class="desc">${escapeHtml(entry.description)}</div>` : ""}
+  </div>
+  <div class="delta"><div class="v">${entry.consecutiveDays}</div><div class="l">连续在榜（天）</div></div>
+</div>`,
+    )
+    .join("\n")
+  return `<div class="list-head">
+  <h2>连续在榜 Top ${top.length}</h2>
+  <span class="meta">最近未中断的在榜天数（跨全部已采集数据）</span>
+</div>
+<div class="list">${rows}</div>`
+}
+
+function renderDevelopers(developers: DeveloperEntry[]): string {
+  if (developers.length === 0) return ""
+  const top = developers.slice(0, 20)
+  const rows = top
+    .map((d) => {
+      const tags = [d.isNew ? "新上榜" : "", d.isReturning ? "回归" : ""].filter(Boolean)
+      const desc = d.repoName
+        ? `<div class="desc">${escapeHtml(d.repoName)}${d.repoDescription ? " · " + escapeHtml(d.repoDescription) : ""}</div>`
+        : ""
+      return `<div class="row">
+  <div class="rank">${d.rank}</div>
+  <div class="main">
+    <div class="repo-line">
+      <a class="repo" href="https://github.com/${escapeHtml(d.username)}" target="_blank" rel="noopener">@${escapeHtml(d.username)}</a>
+      ${d.name ? `<span class="dev-name">${escapeHtml(d.name)}</span>` : ""}
+      ${tags.length > 0 ? `<span class="tags">${tags.map((t) => `<span class="tag${t === "回归" ? " returning" : ""}">${t}</span>`).join("")}</span>` : ""}
+    </div>
+    ${desc}
+    <div class="meta-line"><span>首次上榜 ${escapeHtml(d.firstSeen)}</span><span class="sep">·</span><span>在榜 ${d.presenceDays} 天</span><span class="sep">·</span><span>连续 ${d.consecutiveDays} 天</span></div>
+  </div>
+</div>`
+    })
+    .join("\n")
+  return `<div class="list-head">
+  <h2>开发者榜 Top ${top.length}</h2>
+  <span class="meta">GitHub Trending 开发者榜 · 按当日排名</span>
+</div>
+<div class="list">${rows}</div>`
+}
+
+function renderWindowSection(key: WindowKey, ranking: RankingWindow, active: boolean): string {
+  const hidden = ranking.available && active ? "" : " hidden"
+  if (!ranking.available) {
+    return `<div class="window-section${hidden}" id="window-${key}">
+  <div class="panel empty">「${WINDOW_LABEL[key]}」基线数据不足，暂无榜单。数据每天自动采集，基线积累完成后自动上线。</div>
+</div>`
+  }
+  const hasContent = ranking.items.length > 0 || ranking.newcomers.length > 0
+  if (!hasContent) {
+    return `<div class="window-section${hidden}" id="window-${key}">
+  <div class="panel empty">暂无符合条件的条目。</div>
+</div>`
+  }
+  const title =
+    key === "7d"
+      ? `本周新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
+      : key === "30d"
+        ? `近 30 日新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
+        : `近 1 日新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
+  const meta = `${ranking.baselineDate} → ${ranking.latestDate} · 候选 ${ranking.candidateCount} 个项目`
+  return `<div class="window-section${hidden}" id="window-${key}">
+  <div class="list-head">
+  <h2>${title}</h2>
+  <span class="meta">${meta}</span>
+</div>
+${renderList(ranking.items, WINDOW_LABEL[key])}
+${ranking.newcomers.length > 0 ? renderNewcomers(ranking.newcomers.slice(0, 12)) : ""}
+${renderReturning(ranking.returning, WINDOW_LABEL[key])}
+</div>`
+}
+
 function buildPage(data: DerivedData): string {
   const weekly = data.rankings["7d"]
   const daily = data.rankings["1d"]
   const primaryKey: WindowKey = weekly.available ? "7d" : "1d"
   const primary = data.rankings[primaryKey]
-  const windowLabel = WINDOW_LABEL[primaryKey]
 
   const weeklyReady = weekly.available
   const expectedDate = data.dates.length > 0 ? addDaysSafe(data.dates[0], 7) : null
@@ -133,29 +266,27 @@ function buildPage(data: DerivedData): string {
     ? ""
     : `<div class="notice">周榜（7 日差分）预计 <strong>${expectedDate ?? "数据满 7 天后"}</strong> 上线${daily.available ? "，当前先展示近 1 日增量" : ""}。年榜需积累满一年后启用。</div>`
 
-  const listTitle =
-    primaryKey === "7d"
-      ? `本周新增 Star Top ${Math.min(TOP_N, primary.items.length)}`
-      : `近 1 日新增 Star Top ${Math.min(TOP_N, primary.items.length)}`
+  const windows: WindowKey[] = ["7d", "1d", "30d"]
+  const tabs = windows
+    .map((key) => {
+      const available = data.rankings[key].available
+      const cls = "tab" + (available ? "" : " disabled") + (key === primaryKey && available ? " active" : "")
+      const note = available ? "" : `<span class="tab-note">待数据</span>`
+      return `<button class="${cls}" type="button" data-window="${key}"${available ? "" : " disabled"}>${WINDOW_LABEL[key]}${note}</button>`
+    })
+    .join("")
 
-  const listMeta = primary.available
-    ? `${primary.baselineDate} → ${primary.latestDate} · 候选 ${primary.candidateCount} 个项目`
-    : `基线不足 · 候选 ${primary.candidateCount} 个项目`
+  const sections = windows
+    .map((key) => renderWindowSection(key, data.rankings[key], key === primaryKey && primary.available))
+    .join("\n")
+  const streak = renderStreak(primary.items, primary.available)
+  const developers = renderDevelopers(data.developers)
 
-  const hasContent = primary.items.length > 0 || primary.newcomers.length > 0
-
-  const main = !primary.available
-    ? `<div class="panel empty">基线数据不足，暂无榜单。数据每天自动采集，满 7 天后周榜自动上线。</div>`
-    : hasContent
-      ? `<div class="list-head">
-  <h2>${listTitle}</h2>
-  <span class="meta">${listMeta}</span>
-</div>
-${renderList(primary.items, windowLabel)}
-${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12)) : ""}`
-      : `<div class="panel empty">暂无符合条件的条目。</div>`
-
-  const rateNote = `<div class="note">口径：增量 = 最新快照 − 基线快照（本窗口起点）；增速 = 增量 ÷ 当前 Star 总量；榜单完全由增量决定，历史总量不参与排序；「新上榜」= 最近 7 天内首次出现；「回归」= 中断 ≥7 天再次出现。</div>`
+  const rateNote = `<div class="note">口径：各窗口共享同一候选池（最新一天在榜项目），但榜单口径互不相同——<br>
+「本期新增」= 最新快照 − N 天前基线快照，<strong>仅统计基线日已在榜的项目</strong>，按增量排序；<br>
+「新上榜」= 基线日<strong>不在榜</strong>、窗口内首次出现的项目——数学上无基线可差分，<strong>不进新增榜</strong>，单独按「自首次上榜以来新增」排序（与新增榜互斥）；<br>
+「回归」= 中断 ≥7 天后重新在榜，独立统计（与新增榜可重叠；无基线时差分为 —）；<br>
+「连续在榜」= 最近未中断的在榜天数（跨全部已采集数据）；「开发者榜」为人物维度，按 GitHub Trending 当日排名。候选池不区分语言。</div>`
 
   const apiLinks = [
     `./data/rank-${primaryKey}.json`,
@@ -204,7 +335,13 @@ ${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12))
     ${notice}
   </header>
 
-  ${main}
+  ${tabs}
+
+  ${sections}
+
+  ${streak}
+
+  ${developers}
 
   ${rateNote}
 
@@ -215,6 +352,24 @@ ${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12))
   </footer>
 </div>
 <div id="translateToast" role="status"></div>
+<script>
+(function () {
+  var tabs = document.querySelectorAll(".tab[data-window]")
+  if (tabs.length === 0) return
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      if (tab.disabled) return
+      document.querySelectorAll(".tab").forEach(function (t) {
+        t.classList.toggle("active", t === tab)
+      })
+      var key = tab.getAttribute("data-window")
+      document.querySelectorAll(".window-section").forEach(function (s) {
+        s.classList.toggle("hidden", s.id !== "window-" + key)
+      })
+    })
+  })
+})()
+</script>
 <script>
 (function () {
   var btn = document.getElementById("translateBtn")
@@ -431,6 +586,15 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 #translateToast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);max-width:min(90vw,430px);background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.7;color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:99}
 #translateToast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
 #translateToast a{color:var(--accent);white-space:nowrap}
+.tabs{display:flex;gap:8px;margin:8px 0 4px;flex-wrap:wrap}
+.tab{cursor:pointer;font-family:inherit;font-size:13px;padding:6px 14px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--dim)}
+.tab:hover:not(:disabled){color:var(--text);border-color:var(--dim)}
+.tab.active{color:var(--text);background:var(--panel);border-color:var(--dim);font-weight:600}
+.tab:disabled{opacity:.45;cursor:default}
+.tab-note{font-size:10px;color:var(--warn);margin-left:4px}
+.window-section.hidden{display:none}
+.dev-name{color:var(--dim);font-size:12px}
+.newcomer .d-new{color:var(--up);font-size:11px;margin-top:3px}
 .translate-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;display:none;min-width:132px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:10}
 .translate-menu.open{display:block}
 .translate-menu a{display:block;padding:6px 10px;border-radius:6px;color:var(--text);font-size:12.5px}

@@ -202,6 +202,10 @@ export type RepoMetrics = {
   isNew: boolean
   isReturning: boolean
   deltas: Record<WindowKey, DeltaInfo | null>
+  /** 首次上榜当天的 Star 总量（新上榜榜的差分基准） */
+  firstSeenStars: number | null
+  /** 自首次上榜以来可观测的 Star 增量（新上榜榜排序依据） */
+  starsSinceFirstSeen: number | null
 }
 
 export type RankingEntry = {
@@ -221,6 +225,9 @@ export type RankingEntry = {
   consecutiveDays: number
   lastGapDays: number | null
   tags: string[]
+  /** 自首次上榜以来的可观测增量（主要给新上榜榜用） */
+  starsSinceFirstSeen: number | null
+  firstSeenStars: number | null
 }
 
 export type RankingWindow = {
@@ -233,6 +240,8 @@ export type RankingWindow = {
   candidateCount: number
   items: RankingEntry[]
   newcomers: RankingEntry[]
+  /** 回归项目（中断 ≥7 天后重新在榜，独立于差分是否可得） */
+  returning: RankingEntry[]
 }
 
 export type DeveloperEntry = {
@@ -365,6 +374,7 @@ function presenceStats<V>(
 function computeRepoMetrics(record: RepoRecord, dates: string[], latestDate: string): RepoMetrics {
   const presence = presenceStats(record.days, dates, latestDate)
   const latest = record.days[latestDate]
+  const firstSeenEntry = record.days[presence.firstSeen]
 
   const deltas = {} as Record<WindowKey, DeltaInfo | null>
   for (const window of WINDOW_KEYS) {
@@ -398,6 +408,8 @@ function computeRepoMetrics(record: RepoRecord, dates: string[], latestDate: str
     isNew: presence.isNew,
     isReturning: presence.isReturning,
     deltas,
+    firstSeenStars: latest && firstSeenEntry ? firstSeenEntry.stars : null,
+    starsSinceFirstSeen: latest && firstSeenEntry ? latest.stars - firstSeenEntry.stars : null,
   }
 }
 
@@ -427,6 +439,8 @@ function toEntry(m: RepoMetrics, window: WindowKey, rank: number | null): Rankin
     consecutiveDays: m.consecutiveDays,
     lastGapDays: m.lastGapDays,
     tags: tagsOf(m),
+    starsSinceFirstSeen: m.starsSinceFirstSeen,
+    firstSeenStars: m.firstSeenStars,
   }
 }
 
@@ -453,10 +467,20 @@ function buildRankingWindow(
   })
   const items = withBaseline.map((m, i) => toEntry(m, window, i + 1))
 
-  newcomers.sort((a, b) =>
-    a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : b.stars - a.stars,
-  )
+  // 新上榜榜：无基线可差分，按「自首次上榜以来」可观测增量排序
+  newcomers.sort((a, b) => {
+    const ga = a.starsSinceFirstSeen ?? -1
+    const gb = b.starsSinceFirstSeen ?? -1
+    return gb - ga || (a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : b.stars - a.stars)
+  })
   const newcomerEntries = newcomers.map((m) => toEntry(m, window, null))
+
+  // 回归榜：中断 ≥7 天后重新在榜；有基线者沿用主榜名次与差分，独立统计
+  const returning = withBaseline
+    .filter((m) => m.isReturning)
+    .sort((a, b) => (b.deltas[window] as DeltaInfo).delta - (a.deltas[window] as DeltaInfo).delta)
+    .slice(0, 10)
+  const returningEntries = returning.map((m) => toEntry(m, window, withBaseline.indexOf(m) + 1))
 
   return {
     window,
@@ -468,6 +492,7 @@ function buildRankingWindow(
     candidateCount: repos.length,
     items,
     newcomers: newcomerEntries,
+    returning: returningEntries,
   }
 }
 
