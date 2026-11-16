@@ -16,6 +16,29 @@ const WINDOW_LABEL: Record<WindowKey, string> = {
   "30d": "近 30 日",
 }
 
+type ViewKey = "delta" | "newcomers" | "returning" | "streak" | "developers"
+
+const VIEW_ORDER: { key: ViewKey; label: string; windowed: boolean }[] = [
+  { key: "delta", label: "📈 新增榜", windowed: true },
+  { key: "newcomers", label: "🆕 新上榜", windowed: true },
+  { key: "returning", label: "🔁 回归", windowed: true },
+  { key: "streak", label: "🔥 连续在榜", windowed: false },
+  { key: "developers", label: "👤 开发者", windowed: false },
+]
+
+const VIEW_EXPLAIN: Record<ViewKey, string> = {
+  delta:
+    "只统计基线日已在榜的项目：新增 Star = 最新快照 − N 天前基线快照，按增量从高到低排序。新上榜项目因没有基线，不进入本榜（见「新上榜」页）。",
+  newcomers:
+    "N 天前不在榜、窗口内才首次出现的项目：数学上没有基线可差分，因此不进入「新增榜」。本榜按「自首次上榜以来新增」从高到低排序。",
+  returning:
+    "中断 ≥7 天后重新回到榜单的项目，独立统计。与「新增榜」可以重叠：有基线时按增量排序并沿用主榜名次；无基线时差分为 —。",
+  streak:
+    "按最近一段未中断的在榜天数排序（跨全部已采集数据），衡量项目的持续热度，而非短期增量。",
+  developers:
+    "GitHub Trending 开发者榜，按当日排名展示。包含代表仓库、首次上榜时间与在榜连续性；「新上榜 / 回归」标签含义同仓库榜。",
+}
+
 const fmt = new Intl.NumberFormat("en-US")
 
 const REPO_URL = "https://github.com/"
@@ -218,35 +241,55 @@ function renderDevelopers(developers: DeveloperEntry[]): string {
 <div class="list">${rows}</div>`
 }
 
-function renderWindowSection(key: WindowKey, ranking: RankingWindow, active: boolean): string {
-  const hidden = ranking.available && active ? "" : " hidden"
-  if (!ranking.available) {
-    return `<div class="window-section${hidden}" id="window-${key}">
-  <div class="panel empty">「${WINDOW_LABEL[key]}」基线数据不足，暂无榜单。数据每天自动采集，基线积累完成后自动上线。</div>
+function renderViewBody(viewKey: ViewKey, data: DerivedData, primaryKey: WindowKey): string {
+  if (viewKey === "streak") return renderStreak(data.rankings[primaryKey].items, data.rankings[primaryKey].available)
+  if (viewKey === "developers") return renderDevelopers(data.developers)
+
+  const windows: WindowKey[] = ["7d", "1d", "30d"]
+  return windows
+    .map((key) => {
+      const ranking = data.rankings[key]
+      const hidden = key === primaryKey && ranking.available ? "" : " hidden"
+      if (!ranking.available) {
+        return `<div class="window-section${hidden}" data-w="${key}">
+  <div class="panel empty">「${WINDOW_LABEL[key]}」窗口基线数据不足，暂无榜单。数据每天自动采集，基线积累完成后自动上线。</div>
 </div>`
-  }
-  const hasContent = ranking.items.length > 0 || ranking.newcomers.length > 0
-  if (!hasContent) {
-    return `<div class="window-section${hidden}" id="window-${key}">
-  <div class="panel empty">暂无符合条件的条目。</div>
-</div>`
-  }
-  const title =
-    key === "7d"
-      ? `本周新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
-      : key === "30d"
-        ? `近 30 日新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
-        : `近 1 日新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
-  const meta = `${ranking.baselineDate} → ${ranking.latestDate} · 候选 ${ranking.candidateCount} 个项目`
-  return `<div class="window-section${hidden}" id="window-${key}">
-  <div class="list-head">
+      }
+      let body = ""
+      if (viewKey === "delta") {
+        const hasContent = ranking.items.length > 0 || ranking.newcomers.length > 0
+        if (!hasContent) {
+          body = `<div class="panel empty">暂无符合条件的条目。</div>`
+        } else {
+          const title =
+            key === "7d"
+              ? `本周新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
+              : key === "30d"
+                ? `近 30 日新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
+                : `近 1 日新增 Star Top ${Math.min(TOP_N, ranking.items.length)}`
+          const meta = `${ranking.baselineDate} → ${ranking.latestDate} · 候选 ${ranking.candidateCount} 个项目`
+          body = `<div class="list-head">
   <h2>${title}</h2>
   <span class="meta">${meta}</span>
 </div>
-${renderList(ranking.items, WINDOW_LABEL[key])}
-${ranking.newcomers.length > 0 ? renderNewcomers(ranking.newcomers.slice(0, 12)) : ""}
-${renderReturning(ranking.returning, WINDOW_LABEL[key])}
+${renderList(ranking.items, WINDOW_LABEL[key])}`
+        }
+      } else if (viewKey === "newcomers") {
+        body =
+          ranking.newcomers.length > 0
+            ? renderNewcomers(ranking.newcomers.slice(0, 12))
+            : `<div class="panel empty">本窗口暂无新上榜项目。</div>`
+      } else {
+        body =
+          ranking.returning.length > 0
+            ? renderReturning(ranking.returning, WINDOW_LABEL[key])
+            : `<div class="panel empty">本窗口暂无回归项目。</div>`
+      }
+      return `<div class="window-section${hidden}" data-w="${key}">
+${body}
 </div>`
+    })
+    .join("\n")
 }
 
 function buildPage(data: DerivedData): string {
@@ -267,7 +310,7 @@ function buildPage(data: DerivedData): string {
     : `<div class="notice">周榜（7 日差分）预计 <strong>${expectedDate ?? "数据满 7 天后"}</strong> 上线${daily.available ? "，当前先展示近 1 日增量" : ""}。年榜需积累满一年后启用。</div>`
 
   const windows: WindowKey[] = ["7d", "1d", "30d"]
-  const tabs = windows
+  const windowTabs = windows
     .map((key) => {
       const available = data.rankings[key].available
       const cls = "tab" + (available ? "" : " disabled") + (key === primaryKey && available ? " active" : "")
@@ -276,11 +319,16 @@ function buildPage(data: DerivedData): string {
     })
     .join("")
 
-  const sections = windows
-    .map((key) => renderWindowSection(key, data.rankings[key], key === primaryKey && primary.available))
-    .join("\n")
-  const streak = renderStreak(primary.items, primary.available)
-  const developers = renderDevelopers(data.developers)
+  const viewTabs = VIEW_ORDER.map(
+    (v) => `<button class="view-tab${v.key === "delta" ? " active" : ""}" type="button" data-view="${v.key}"${v.windowed ? " data-windowed" : ""}>${v.label}</button>`,
+  ).join("")
+
+  const views = VIEW_ORDER.map(
+    (v) => `<div class="view${v.key === "delta" ? "" : " hidden"}" id="view-${v.key}">
+  <p class="explain">${VIEW_EXPLAIN[v.key]}</p>
+${renderViewBody(v.key, data, primaryKey)}
+</div>`,
+  ).join("\n")
 
   const rateNote = `<div class="note">口径：各窗口共享同一候选池（最新一天在榜项目），但榜单口径互不相同——<br>
 「本期新增」= 最新快照 − N 天前基线快照，<strong>仅统计基线日已在榜的项目</strong>，按增量排序；<br>
@@ -335,13 +383,11 @@ function buildPage(data: DerivedData): string {
     ${notice}
   </header>
 
-  ${tabs}
+  <div class="view-tabs">${viewTabs}</div>
 
-  ${sections}
+  <div id="windowTabs" class="tabs">${windowTabs}</div>
 
-  ${streak}
-
-  ${developers}
+  ${views}
 
   ${rateNote}
 
@@ -354,17 +400,31 @@ function buildPage(data: DerivedData): string {
 <div id="translateToast" role="status"></div>
 <script>
 (function () {
-  var tabs = document.querySelectorAll(".tab[data-window]")
-  if (tabs.length === 0) return
-  tabs.forEach(function (tab) {
+  var btns = document.querySelectorAll(".view-tab")
+  if (btns.length === 0) return
+  btns.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".view-tab").forEach(function (b) {
+        b.classList.toggle("active", b === btn)
+      })
+      var key = btn.getAttribute("data-view")
+      document.querySelectorAll(".view").forEach(function (v) {
+        v.classList.toggle("hidden", v.id !== "view-" + key)
+      })
+      var tabsBar = document.getElementById("windowTabs")
+      if (tabsBar) tabsBar.classList.toggle("hidden", btn.getAttribute("data-windowed") === null)
+    })
+  })
+  var wtabs = document.querySelectorAll(".tab[data-window]")
+  wtabs.forEach(function (tab) {
     tab.addEventListener("click", function () {
       if (tab.disabled) return
-      document.querySelectorAll(".tab").forEach(function (t) {
+      var key = tab.getAttribute("data-window")
+      document.querySelectorAll(".tab[data-window]").forEach(function (t) {
         t.classList.toggle("active", t === tab)
       })
-      var key = tab.getAttribute("data-window")
       document.querySelectorAll(".window-section").forEach(function (s) {
-        s.classList.toggle("hidden", s.id !== "window-" + key)
+        s.classList.toggle("hidden", s.getAttribute("data-w") !== key)
       })
     })
   })
@@ -592,7 +652,12 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .tab.active{color:var(--text);background:var(--panel);border-color:var(--dim);font-weight:600}
 .tab:disabled{opacity:.45;cursor:default}
 .tab-note{font-size:10px;color:var(--warn);margin-left:4px}
-.window-section.hidden{display:none}
+.hidden{display:none}
+.view-tabs{display:flex;gap:8px;margin:10px 0 0;flex-wrap:wrap}
+.view-tab{cursor:pointer;font-family:inherit;font-size:13.5px;padding:7px 16px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--dim)}
+.view-tab:hover{color:var(--text);border-color:var(--dim)}
+.view-tab.active{color:var(--text);background:var(--panel);border-color:var(--accent);font-weight:600}
+.explain{color:var(--dim);font-size:12.5px;line-height:1.7;margin:12px 0 2px}
 .dev-name{color:var(--dim);font-size:12px}
 .newcomer .d-new{color:var(--up);font-size:11px;margin-top:3px}
 .translate-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;display:none;min-width:132px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:10}
