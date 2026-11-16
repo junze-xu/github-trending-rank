@@ -175,8 +175,22 @@ ${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12))
 <body>
 <div class="container">
   <header class="site">
-    <h1>📊 GitHub Trending 周榜 · 年榜</h1>
-    <p class="sub">GitHub Trending 的周排行 / 年度排行 · 只看变化量，不做历史快照</p>
+    <div class="site-head">
+      <div class="site-title">
+        <h1>📊 GitHub Trending 周榜 · 年榜</h1>
+        <p class="sub">GitHub Trending 的周排行 / 年度排行 · 只看变化量，不做历史快照</p>
+      </div>
+      <div class="translate">
+        <button id="translateBtn" class="translate-btn" type="button" aria-haspopup="true" aria-expanded="false">🌐 翻译</button>
+        <div id="translateMenu" class="translate-menu">
+          <a data-tl="en" href="#">English</a>
+          <a data-tl="zh-CN" href="#">简体中文</a>
+          <a data-tl="zh-TW" href="#">繁體中文</a>
+          <a data-tl="ja" href="#">日本語</a>
+          <a data-tl="ko" href="#">한국어</a>
+        </div>
+      </div>
+    </div>
     <div class="badges">
       ${statusBadge}
       <span class="badge">数据截至 ${data.latestDate}</span>
@@ -195,6 +209,32 @@ ${primary.newcomers.length > 0 ? renderNewcomers(primary.newcomers.slice(0, 12))
     <div>仓库：<a href="${SITE_REPO}" target="_blank" rel="noopener">junze-xu/github-trending-rank</a></div>
   </footer>
 </div>
+<script>
+(function () {
+  var btn = document.getElementById("translateBtn")
+  var menu = document.getElementById("translateMenu")
+  if (!btn || !menu) return
+  // 浏览器内置翻译没有对网页开放的接口，这里调用 Google 翻译的公开整页翻译接口
+  var pageUrl = location.protocol === "file:"
+    ? "https://junze-xu.github.io/github-trending-rank/"
+    : location.href
+  menu.querySelectorAll("a[data-tl]").forEach(function (a) {
+    var tl = a.getAttribute("data-tl")
+    a.href = "https://translate.google.com/translate?sl=auto&tl=" + tl + "&u=" + encodeURIComponent(pageUrl)
+    a.target = "_blank"
+    a.rel = "noopener"
+  })
+  btn.addEventListener("click", function (e) {
+    e.stopPropagation()
+    var open = menu.classList.toggle("open")
+    btn.setAttribute("aria-expanded", open ? "true" : "false")
+  })
+  document.addEventListener("click", function () {
+    menu.classList.remove("open")
+    btn.setAttribute("aria-expanded", "false")
+  })
+})()
+</script>
 </body>
 </html>
 `
@@ -229,6 +269,16 @@ a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .sub{color:var(--dim);font-size:13px;margin-top:4px}
+.site-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.site-title{min-width:0}
+.translate{position:relative;flex:none}
+.translate-btn{cursor:pointer;font-family:inherit;font-size:12px;color:var(--dim);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:4px 12px;transition:color .15s,border-color .15s}
+.translate-btn:hover{color:var(--text);border-color:var(--dim)}
+.translate-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;display:none;min-width:132px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:10}
+.translate-menu.open{display:block}
+.translate-menu a{display:block;padding:6px 10px;border-radius:6px;color:var(--text);font-size:12.5px}
+.translate-menu a:hover{background:var(--bg);text-decoration:none}
+@media(max-width:640px){.site-head{flex-direction:column;align-items:stretch}.translate{align-self:flex-end}}
 .badges{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
 .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);color:var(--dim)}
 .badge .dot{width:7px;height:7px;border-radius:50%;background:var(--warn)}
