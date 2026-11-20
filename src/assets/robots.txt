@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://junze-xu.github.io/github-trending-rank/sitemap.xml

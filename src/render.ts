@@ -347,6 +347,18 @@ ${renderViewBody(v.key, data, primaryKey)}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GitHub Trending 周榜 · 年榜</title>
 <meta name="description" content="GitHub Trending 的周排行 / 年度排行 · 只看变化量，不做历史快照">
+<meta name="author" content="Junze Xu">
+<meta name="keywords" content="GitHub Trending, 周榜, 年榜, Star 增长, 开源项目排行, 开发者榜, GitHub 趋势">
+<link rel="canonical" href="https://junze-xu.github.io/github-trending-rank/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GitHub Trending 周榜">
+<meta property="og:title" content="GitHub Trending 周榜 · 年榜">
+<meta property="og:description" content="GitHub Trending 的周排行 / 年度排行 · 只看变化量，不做历史快照">
+<meta property="og:url" content="https://junze-xu.github.io/github-trending-rank/">
+<meta property="og:locale" content="zh_CN">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="GitHub Trending 周榜 · 年榜">
+<meta name="twitter:description" content="GitHub Trending 的周排行 / 年度排行 · 只看变化量，不做历史快照">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%93%8A%3C/text%3E%3C/svg%3E">
 <style>${STYLE}</style>
 </head>
@@ -389,7 +401,11 @@ ${renderViewBody(v.key, data, primaryKey)}
   <footer class="site">
     <div>数据来源 <a href="https://github.com/trending" target="_blank" rel="noopener">github.com/trending</a> · 每天自动采集 · 全站共 ${data.daysAvailable} 天数据</div>
     <div>JSON API：${apiLinks}</div>
-    <div>仓库：<a href="${SITE_REPO}" target="_blank" rel="noopener">junze-xu/github-trending-rank</a></div>
+    <div>仓库：<a href="${SITE_REPO}" target="_blank" rel="noopener">junze-xu/github-trending-rank</a> · <a href="https://junze-xu.github.io/" target="_blank" rel="noopener">作者博客</a></div>
+    <div class="footer-qr">
+      <div class="qr-item"><img src="./qrcode-official-account.jpg" alt="公众号 JunzeXuInfra 二维码" width="92" height="92"><span>公众号 <b>JunzeXuInfra</b> · 关注获取更新</span></div>
+      <div class="qr-item"><img src="./wechat-junze.jpg" alt="个人微信 JunzeXu 二维码" width="92" height="92"><span>个人微信 <b>JunzeXu</b> · 交流合作</span></div>
+    </div>
   </footer>
 </div>
 <div id="translateToast" role="status"></div>
@@ -692,6 +708,10 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 .panel.empty{color:var(--dim);font-size:13px;text-align:center}
 .note{color:var(--dim);font-size:12px;margin-top:16px;line-height:1.8}
 footer.site{margin-top:38px;padding-top:18px;border-top:1px solid var(--border-soft);color:var(--dim);font-size:12px;line-height:2.1}
+.footer-qr{display:flex;justify-content:center;gap:32px;margin-top:16px;flex-wrap:wrap}
+.qr-item{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--dim);text-align:center}
+.qr-item img{width:92px;height:92px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;border:1px solid var(--border)}
+.qr-item b{color:var(--text)}
 @media (max-width:640px){
   .row{grid-template-columns:28px minmax(0,1fr);grid-template-areas:"rank main" "rank delta";row-gap:2px}
   .rank{grid-area:rank}
