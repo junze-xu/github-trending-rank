@@ -403,8 +403,8 @@ ${renderViewBody(v.key, data, primaryKey)}
     <div>JSON API：${apiLinks}</div>
     <div>仓库：<a href="${SITE_REPO}" target="_blank" rel="noopener">junze-xu/github-trending-rank</a> · <a href="https://junze-xu.github.io/" target="_blank" rel="noopener">作者博客</a></div>
     <div class="footer-qr">
-      <div class="qr-item"><img src="./qrcode-official-account.jpg" alt="公众号 JunzeXuInfra 二维码" width="92" height="92"><span>公众号 <b>JunzeXuInfra</b> · 关注获取更新</span></div>
-      <div class="qr-item"><img src="./wechat-junze.jpg" alt="个人微信 JunzeXu 二维码" width="92" height="92"><span>个人微信 <b>JunzeXu</b> · 交流合作</span></div>
+      <div class="qr-item"><img src="./qrcode-official-account.jpg" alt="公众号 JunzeXuInfra 二维码" width="120" height="120"><span>公众号 <b>JunzeXuInfra</b> · 关注获取更新</span></div>
+      <div class="qr-item"><img src="./wechat-junze.jpg" alt="个人微信 JunzeXu 二维码" width="120" height="120"><span>个人微信 <b>JunzeXu</b> · 交流合作</span></div>
     </div>
   </footer>
 </div>
@@ -710,7 +710,7 @@ h1{font-size:22px;font-weight:600;letter-spacing:.2px}
 footer.site{margin-top:38px;padding-top:18px;border-top:1px solid var(--border-soft);color:var(--dim);font-size:12px;line-height:2.1}
 .footer-qr{display:flex;justify-content:center;gap:32px;margin-top:16px;flex-wrap:wrap}
 .qr-item{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--dim);text-align:center}
-.qr-item img{width:92px;height:92px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;border:1px solid var(--border)}
+.qr-item img{width:120px;height:120px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;border:1px solid var(--border)}
 .qr-item b{color:var(--text)}
 @media (max-width:640px){
   .row{grid-template-columns:28px minmax(0,1fr);grid-template-areas:"rank main" "rank delta";row-gap:2px}
