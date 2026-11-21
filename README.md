@@ -39,7 +39,7 @@
 ## 数据流
 
 ```
-每日快照（src/scraper 采集器，GitHub Actions 定时）
+每日快照（src/scraper 采集器，GitHub Actions 每日 08:00 触发）
      ↓ 跨天差分（src/derive.ts）
 周 / 月 / 年指标（dist/data/*.json）
      ↓ 渲染（src/render.ts）
@@ -56,7 +56,7 @@
 | `src/build.ts` | 构建入口（derive → render） |
 | `archive/` | 每日快照（原始数据，从 2026-11-07 起累计） |
 | `dist/` | 构建产物（不入库；由 CI 生成并部署到 Pages） |
-| `.github/workflows/` | Actions：scrape（每日 08:00 主跑，16:00 兜底重试）+ build（采集完成后） |
+| `.github/workflows/` | Actions：scrape（每日 08:00 主跑，16:00 兜底重试）+ build（archive / src 有新数据推送时触发） |
 
 ## 路线图
 

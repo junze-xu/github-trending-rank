@@ -1,10 +1,13 @@
 name: build
 
 on:
-  workflow_run:
-    workflows: ["scrape-repository", "scrape-developer"]
-    types: [completed]
+  # 仅当采集器推送了新 archive 数据、或渲染/构建代码变更时才构建部署；
+  # 不再挂在 workflow_run 上（每小时空跑的采集也会触发构建，纯属浪费）。
+  push:
     branches: [main]
+    paths:
+      - "archive/**"
+      - "src/**"
   workflow_dispatch:
 
 permissions:
@@ -19,7 +22,6 @@ concurrency:
 jobs:
   build:
     name: derive & deploy
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
