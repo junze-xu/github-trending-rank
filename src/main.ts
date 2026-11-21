@@ -103,7 +103,7 @@ async function persistDeveloper(
     dir: string,
 ) {
     await fs.mkdir(dir, {recursive: true})
-    return Promise.all(
+    const counts = await Promise.all(
         resultList.map(async (result) => {
             const language = (result.language !== '')
                 ? decodeURIComponent(result.language)
@@ -116,9 +116,12 @@ async function persistDeveloper(
                 list: result.items,
             }
             await fs.writeFile(filePath, JSON.stringify(dataToWrite), "utf-8")
-            console.log(`${fileName} — ${result.items.length} items`)
+            return result.items.length
         }),
     )
+    const total = counts.reduce((sum, n) => sum + n, 0)
+    // 每次运行仅输出 1 行摘要：约 30 个语言文件，避免日志量随行数膨胀
+    console.log(`archive ${dir} — ${counts.length} 个语言文件，${total} 条记录`)
 }
 
 async function processRepositoryArchive() {
@@ -164,7 +167,7 @@ async function persistRepository(
     dir: string,
 ) {
     await fs.mkdir(dir, {recursive: true})
-    return Promise.all(
+    const counts = await Promise.all(
         resultList.map(async (result) => {
             const language = (result.language !== '')
                 ? decodeURIComponent(result.language)
@@ -177,9 +180,12 @@ async function persistRepository(
                 list: result.items,
             }
             await fs.writeFile(filePath, JSON.stringify(dataToWrite), "utf-8")
-            console.log(`${fileName} — ${result.items.length} items`)
+            return result.items.length
         }),
     )
+    const total = counts.reduce((sum, n) => sum + n, 0)
+    // 每次运行仅输出 1 行摘要：约 30 个语言文件，避免日志量随行数膨胀
+    console.log(`archive ${dir} — ${counts.length} 个语言文件，${total} 条记录`)
 }
 
 function getToday() {
