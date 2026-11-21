@@ -2,7 +2,7 @@
   "compilerOptions": {
     "incremental": true,
     "target": "ES2021",
-    "module": "nodenext",
+    "module": "commonjs",
     "moduleResolution": "node",
     "isolatedModules": true,
     "esModuleInterop": true,
